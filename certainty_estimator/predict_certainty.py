@@ -2,11 +2,15 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from .edited_bert import BertModel, BertForSequenceClassification
 import torch
 from torch import Tensor
+
 import numpy as np
 import math
 
-
 class CertaintyEstimator(object):
+    UNCERTAINTY_CATEGORIES = ['Number','Extent','Probability','Condition','Suggestion','Framing']
+    UNCERTAINTY_ASPECT_MAPPING = {0:'Uncertain', 1:'NotPresent', 2:'Certain'}
+    
+    
     def __init__(self, task = 'sentence-level', cuda = False, use_auth_token=False):
         
         self.task = task
@@ -116,8 +120,8 @@ class CertaintyEstimator(object):
                 all_preds.extend(np.transpose(predicted,(1,0,2)))
 
             all_res = np.argmax(all_preds, axis=2)
-            labels = ['Number','Extent','Probability','Condition','Suggestion','Framing']
-            mapping = {0:'Uncertain', 1:'NotPresent', 2:'Certain'}
+            labels = self.UNCERTAINTY_CATEGORIES
+            mapping = self.UNCERTAINTY_ASPECT_MAPPING
             res_with_labels = []
             present_aspect_certainty = []
             for res in all_res:
@@ -147,8 +151,8 @@ class CertaintyEstimator(object):
                 all_preds.extend(np.transpose(predicted,(1,0,2)))
 
             all_res = np.argmax(all_preds, axis=2)
-            labels = ['Number','Extent','Probability','Condition','Suggestion','Framing']
-            mapping = {0:'Uncertain', 1:'NotPresent', 2:'Certain'}
+            labels = self.UNCERTAINTY_CATEGORIES
+            mapping = self.UNCERTAINTY_ASPECT_MAPPING
             res_with_labels = []
             present_aspect_certainty = []
             for res in all_res:
@@ -168,3 +172,21 @@ class CertaintyEstimator(object):
             return self.predict_sentence_level(text, batch_size, tqdm)
         else:
             return self.predict_aspect_level(text, get_processed_output, batch_size, tqdm)
+        
+    def predict_aspect_level_scores(self, text, tqdm=None) -> dict:
+        """Returns the normalized scores for each aspect."""
+        if type(text) == str:
+            text = [text]
+            
+        all_preds = self.predict_aspect_level(text, get_processed_output=False, batch_size=1, tqdm=tqdm)[0][0]
+        # ^Note: Array shape num_unc_classes x categories for each class
+        all_preds = torch.softmax(torch.Tensor(all_preds), dim=-1)
+        
+        results = {}
+        for i, label in enumerate(self.UNCERTAINTY_CATEGORIES):
+            pred_scores = all_preds[i].cpu().detach().numpy()
+            results[label] = pred_scores
+        return results
+
+    
+    
